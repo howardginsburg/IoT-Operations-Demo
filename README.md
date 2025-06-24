@@ -120,20 +120,71 @@ This will augment the telemetry that is sent to the Event Hub to look like:
 ## Process the Data in Fabric Real Time Intelligence
 
 1. Create an Event House.
-2. Create an Event Stream
+2. Create a raw table for the data.
+```kql
+.create table mxchip(buttonA:long,buttonB:long,device:string,gyroX:long,gyroY:long,gyroZ:long,humidity:dynamic,mac:string,mqtttopic:string,pressure:dynamic,temperature:dynamic,EventProcessedUtcTime:datetime,PartitionId:long,EventEnqueuedUtcTime:datetime,current_time:datetime,deviceDateTime:string)
+```
+3. Create an Event Stream
     - Use the Event Hub as the source.
     - Add a Transformation that creates a `current_time` field.
     - Event House as the destination using a new table called `mxchip`.
-3. Save and start the Event Stream.
+4. Save and start the Event Stream.
+
+## Transform the data into a silver layer
+
+1. Create a silver table.
+```kql
+.create table mxchip_silver (buttonA: long, buttonB: long, device: string, gyroX: long, gyroY: long, gyroZ: long, humidity: dynamic, mac: string, pressure: dynamic, temperature: dynamic, messageTime: datetime)
+```
+2. Create a function to transform the raw data into the silver table.  The format of deviceDateTime is not in ISO and we will fix it here.
+```kql
+.create-or-alter function MxChipRawData() {
+    mxchip 
+    | extend deviceDateTime_millis = replace(@":(\d{3})$", @".\1", deviceDateTime) 
+    | extend deviceDateTime_iso = replace(@"(\d{4})/(\d{2})/(\d{2})", @"\1-\2-\3", deviceDateTime_millis)
+    | extend messageTime = todatetime(deviceDateTime_iso) 
+    | project buttonA, buttonB, device, gyroX, gyroY, gyroZ, humidity, mac, pressure, temperature, messageTime
+}
+```
+3. Create an update policy to transform the raw data into the silver table.
+```kql
+.alter table mxchip_silver policy update 
+```[{
+    "IsEnabled": true,
+    "Source": "mxchip",
+    "Query": "MxChipRawData()",
+    "IsTransactional": false,
+    "PropagateIngestionProperties": false
+}]```
+```
+
 
 ## Real Time Dashboard
 
-1. Query for the average temperature for a 24 hour period:
+1. Create a new dashboard in Fabric.
+2. Create a new Parameter called '_device' with a kql query of
 ```kql
-mxchip
-| where current_time >= ago(24h)
-| summarize avgTemperature=round(avg(toreal(temperature)), 2) by mac, hour=bin(current_time, 1h)
-| sort by mac, hour
-| render timechart with (title="Average Temperature by MAC (Hourly, Last 24h)", xtitle="Hour", ytitle="Average Value")
+mxchip_silver
+| where messageTime  between (['_startTime'] .. ['_endTime'])
+| distinct device
+| project device
+```kql
+1. Query for the average temperature:
+```kql
+mxchip_silver
+| where messageTime between (_startTime .. _endTime)
+| where device in (_devices) or isempty(_devices)
+| summarize avgTemperature=round(avg(toreal(temperature)), 2) by mac, device, quarter_hour=bin(messageTime, 15m)
+| sort by mac, quarter_hour
 ```
 2. Pin the tile to a dashboard.
+3. Query for the number of messages sent by each device in the last 24 hours:
+```kql
+mxchip_silver
+| where messageTime  between (_startTime .. _endTime)
+| where device in (_devices) or isempty(_devices)
+| extend quarter_hour = bin(messageTime, 15m)
+| summarize records_count = count() by mac, device, quarter_hour
+| project mac, device, quarter_hour, records_count
+```
+4. Pin the tile to a dashboard.
