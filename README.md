@@ -113,9 +113,11 @@ This will augment the telemetry that is sent to the Event Hub to look like:
   "gyroZ": 350,
   "buttonA": 0,
   "buttonB": 0,
-  "mqtttopic": "/devices/office/messages/events/"
+  "mqtttopic": "/devices/office/messages/events/",
+  "deviceDateTime": "/2025/06/25 23:01:56:252"
 }
 ```
+Note that the `deviceDateTime` is not in ISO format, so we will need to transform it.
 
 ## Process the Data in Fabric Real Time Intelligence
 
