@@ -144,7 +144,11 @@ Note that the `deviceDateTime` is not in ISO format, so we will need to transfor
     mxchip 
     | extend deviceDateTime_millis = replace(@":(\d{3})$", @".\1", deviceDateTime) 
     | extend deviceDateTime_iso = replace(@"(\d{4})/(\d{2})/(\d{2})", @"\1-\2-\3", deviceDateTime_millis)
-    | extend messageTime = todatetime(deviceDateTime_iso) 
+    | extend messageTime = todatetime(deviceDateTime_iso)
+    | extend 
+        humidity = todouble(humidity),
+        pressure = todouble(pressure),
+        temperature = todouble(temperature)
     | project buttonA, buttonB, device, gyroX, gyroY, gyroZ, humidity, mac, pressure, temperature, messageTime
 }
 ```
@@ -176,7 +180,7 @@ mxchip_silver
 mxchip_silver
 | where messageTime between (_startTime .. _endTime)
 | where device in (_devices) or isempty(_devices)
-| summarize avgTemperature=round(avg(toreal(temperature)), 2) by mac, device, quarter_hour=bin(messageTime, 15m)
+| summarize avgTemperature=round(avg(temperature)) by mac, device, quarter_hour=bin(messageTime, 15m)
 | sort by mac, quarter_hour
 ```
 2. Pin the tile to a dashboard.
